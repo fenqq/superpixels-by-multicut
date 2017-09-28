@@ -6,4 +6,5 @@
 *.png
 .*
 
-/bin/*
+bin/*
+benchmark/

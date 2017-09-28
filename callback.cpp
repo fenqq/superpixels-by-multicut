@@ -1,5 +1,6 @@
 #include "callback.h"
 #include <queue>
+#include "opencv2/core/core.hpp"
 
 namespace b = boost;
 
@@ -31,14 +32,62 @@ void myGRBCallback::callback() {
 
       find_segments(graph, non_cuts);
       find_bad_cuts(graph, non_cuts);
-
+      // correct bad cuts now
       for(b::tie(ei, ei_end) = b::edges(graph); ei != ei_end; ++ei) {
         if(!graph[*ei].error)
           continue;
         Graph::vertex_descriptor u = source(*ei, graph), v = target(*ei, graph);
-
-        // find shortest path from u to v
         std::vector<Graph_noprop::vertex_descriptor> p(b::num_vertices(graph), -1);
+        
+        // chordless search:
+        if(false) // useless
+        {
+        //std::vector<Graph_noprop::vertex_descriptor> p(b::num_vertices(graph), -1);
+        std::vector<Color> color(b::num_vertices(graph), white);
+        std::queue<Graph_noprop::vertex_descriptor> Q;
+        p[u] = -1;
+        color[u] = grey;
+        Q.push(u);
+        int tryit = 1;
+        while(!Q.empty()) {
+          if(tryit++ == 100) break; 
+          Graph_noprop::vertex_descriptor u = Q.front();
+          Q.pop();
+          Graph_noprop::adjacency_iterator ai, ai_end;
+          for(b::tie(ai, ai_end) = b::adjacent_vertices(u, non_cuts); ai != ai_end; ++ai){
+            // up, left, right, down
+            bool chord = false;
+            Graph_noprop::vertex_descriptor a1 = u;
+            while(a1 != -1) {
+              Graph_noprop::vertex_descriptor a2 = p[a1];
+              Graph::edge_descriptor e_path = b::edge(a1,a2,graph).first;
+              Graph_noprop::adjacency_iterator aai, aai_end;
+              for(b::tie(aai, aai_end) = b::adjacent_vertices(*ai, non_cuts); aai != aai_end; ++aai){
+                 if(*aai != u && *aai == a2) {
+                    chord = true;
+                    break;
+                 }
+              }
+              a1 = a2;
+            }
+            if(chord) {
+               continue; 
+            }
+            if(color[*ai] == white){
+              color[*ai] = grey;
+              p[*ai] = u;
+              if(*ai == v) {
+                goto found_it;
+              }
+              Q.push(*ai);
+            }
+          }
+          color[u] = black;
+        }
+
+        }
+        // if we don't find a chordless path, we just use the shortest one using BFS: 
+        {
         std::vector<Color> color(b::num_vertices(graph), white);
         std::queue<Graph_noprop::vertex_descriptor> Q;
         p[u] = -1;
@@ -59,6 +108,7 @@ void myGRBCallback::callback() {
             }
           }
           color[u] = black;
+        }
         }
         found_it:
         GRBLinExpr sum_u_to_v(0.0);

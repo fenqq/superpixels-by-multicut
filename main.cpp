@@ -4,7 +4,6 @@
 #include <signal.h>
 #include <math.h>
 #include <vector>
-#include <thread>
 
 #include <boost/program_options.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
@@ -23,39 +22,13 @@
 namespace po = boost::program_options;
 namespace b = boost;
 
-	
-
-string type2str(int type) {
-  string r;
-
-  uchar depth = type & CV_MAT_DEPTH_MASK;
-  uchar chans = 1 + (type >> CV_CN_SHIFT);
-
-  switch ( depth ) {
-    case CV_8U:  r = "8U"; break;
-    case CV_8S:  r = "8S"; break;
-    case CV_16U: r = "16U"; break;
-    case CV_16S: r = "16S"; break;
-    case CV_32S: r = "32S"; break;
-    case CV_32F: r = "32F"; break;
-    case CV_64F: r = "64F"; break;
-    default:     r = "User"; break;
-  }
-
-  r += "C";
-  r += (chans+'0');
-
-  return r;
-}
-
 cv::Mat src, src_gray;
 cv::Mat dst;
-cv::Mat detected_edges;
 cv::Size picture_size;
 
-//int edgeThresh = 1;
-int lowThresh;
-int const max_lowThresh = 100;
+int edgeThresh = 1;
+int lowThreshold;
+int const max_lowThreshold = 100;
 int ratio = 3; // 1:2 or 1:3
 int kernel_size = 3;
 const char* window_name = "Edge Map";
@@ -75,17 +48,25 @@ void my_handler(int s) {
 
 void CannyThreshold(int, void*)
 {
+    cv::Mat detected_edges;
     /// Reduce noise with a kernel 3x3
-    cv::blur( src_gray, detected_edges, cv::Size(3,3) );
+    //cv::blur( src_gray, detected_edges, cv::Size(3,3) );
+    cv::GaussianBlur( src_gray, detected_edges, cv::Size(3,3), 9.5);
 
     /// Canny detector
-    cv::Canny( detected_edges, detected_edges, lowThresh, lowThresh*ratio, kernel_size );
+    cv::Canny( detected_edges, detected_edges, 0, lowThreshold*ratio, kernel_size );
 
     /// Using Canny's output as a mask, we display our result
     dst = cv::Scalar::all(0); // set all pixels of dst to greyscale color 0
 
     src.copyTo( dst, detected_edges); // copy with detected_edges as mask
     cv::imshow( window_name, dst );
+}
+
+void saveMatToCsv(cv::Mat &matrix, std::string filename){
+    std::ofstream outputFile(filename);
+    outputFile << format(matrix, "CSV");
+    outputFile.close();
 }
 
 int main(int argc, char** argv) {
@@ -102,8 +83,11 @@ int main(int argc, char** argv) {
         po::options_description desc("Allowed options");
         desc.add_options()
             ("help,h", "produce help message")
-            ("grid-size,gs", po::value<int>()->default_value(1024), "set number of grid elements. Only approximate")
+            ("grid-size,gs", po::value<int>()->default_value(64), "set number of grid elements. Only approximate")
             ("input-file", po::value< std::string >(), "picture to process")
+            ("output-file", po::value< std::string >()->default_value("out.jpg"), "picture to process")
+            ("interactive", po::value<bool>()->default_value(true), "interactive mode")
+            ("csv", po::value< std::string >()->default_value("out.csv"), "csv file name to write to")
         ;
 
         po::positional_options_description p;
@@ -119,6 +103,7 @@ int main(int argc, char** argv) {
             std::cerr << "no input file given" << std::endl;
             return EXIT_FAILURE;
         }
+        
     }
     catch (po::error &ex) {
         std::cerr << ex.what() << std::endl;
@@ -126,7 +111,6 @@ int main(int argc, char** argv) {
     }
     //parse image and build graph
     // Load an image
-    #if 1 
     src = cv::imread( vm["input-file"].as<std::string>(), CV_LOAD_IMAGE_COLOR );
 
     if( !src.data )
@@ -140,30 +124,26 @@ int main(int argc, char** argv) {
     cv::cvtColor( src, src_gray, CV_BGR2GRAY );
 
     /// Create a window
-    cv::namedWindow( window_name, CV_WINDOW_AUTOSIZE );
+    if(vm["interactive"].as<bool>()) {
+        cv::namedWindow( window_name, CV_WINDOW_AUTOSIZE );
 
-    /// Create a Trackbar for user to enter threshold
-    cv::createTrackbar( "Threshold:", window_name, &lowThresh, max_lowThresh, CannyThreshold );
+        /// Create a Trackbar for user to enter threshold
+        cv::createTrackbar( "Low Threshold:", window_name, &lowThreshold, max_lowThreshold, CannyThreshold );
 
-    /// Show the image
-    CannyThreshold(0, 0);
-        
-    cv::waitKey(0);
+        /// Show the image
+        CannyThreshold(0, 0);
+            
+        cv::waitKey(0);
+    }
 
-    unsigned concurentThreadsSupported = std::thread::hardware_concurrency();
-    DPRINT(concurentThreadsSupported)
+
     //build submatrix per grid segment
 
-    DPRINT(picture_size.width)
-    DPRINT(picture_size.height)
     double ratio = ((double)picture_size.width)/picture_size.height;
     double root = sqrt(vm["grid-size"].as<int>());
     cv::Size segment_dim(floor(ratio * root), floor((1/ratio) * root));
     int number_of_segments = segment_dim.width*segment_dim.height;
     
-    DPRINT(segment_dim.width)
-    DPRINT(segment_dim.height)
-    DPRINT(number_of_segments)
     //segments should like this:
     //D-A A A A A-C C C C
     //| | | | | | | | | |
@@ -175,8 +155,15 @@ int main(int argc, char** argv) {
     // ...
 
     cv::Size2f segment_size_approx(picture_size.width / (float)segment_dim.width, picture_size.height / (float)segment_dim.height);
-    DPRINT(segment_size_approx.width) 
-    DPRINT(segment_size_approx.height) 
+    if(vm["interactive"].as<bool>()) {
+        DPRINT(picture_size.width)
+        DPRINT(picture_size.height)
+        DPRINT(segment_size_approx.width) 
+        DPRINT(segment_size_approx.height) 
+        DPRINT(number_of_segments)
+        DPRINT(segment_dim.width)
+        DPRINT(segment_dim.height)
+    }
 
     
     double lambda = 0.09;
@@ -246,37 +233,17 @@ int main(int argc, char** argv) {
                         g[e].var = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, "edge");
                         //obj2 += lambda_col[x]*g[e].var;
                         obj2 += g[e].var;
-                        obj1 += sqrt(sqrt(fabs(submatrix.at<uchar>(y,x)/255.f-submatrix.at<uchar>(y+1,x)/255.f)))*g[e].var;
+                        obj1 += fabs(submatrix.at<uchar>(y,x)/255.f-submatrix.at<uchar>(y+1,x)/255.f)*g[e].var;
                     }
+                    // edge insertion order is up, left, right, down
                 }
             }
-            //obj2 *= lambda;
-            objective = obj2 - obj1;
-            model.setObjective(objective, GRB_MINIMIZE);
 
-            //canny edge constraints
-            {
-            //std::cout << type2str( detected_edges.type() ) << std::endl;
-            cv::Mat submatrix = detected_edges(g[b::graph_bundle].row, g[b::graph_bundle].col);
-            for(int y = 0; y < segment_size.height-1; ++y) {
-                for(int x = 0; x < segment_size.width-1; ++x) {
-                    //DPRINT((int)submatrix.at<uchar>(y,x))
-                    if((int)submatrix.at<uchar>(y,x) == 255) {
-                        //std::cout << "hi" << std::endl;
-                        int a = xy_to_index(x, y, segment_size);
-                        int b = xy_to_index(x+1, y, segment_size);
-                        Graph::edge_descriptor e_horizontal, e_vertical;
-                        bool exists;
-                        b::tie(e_horizontal, exists) = b::edge(a, b, g);
-                        a = xy_to_index(x, y, segment_size);
-                        b = xy_to_index(x, y+1, segment_size);
-                        b::tie(e_vertical, exists) = b::edge(a, b, g);
-                        model.addConstr(g[e_horizontal].var + g[e_vertical].var >= 1);
-                    }
-                }
-            }
-            }
-            //initial multicut constraints
+            obj2 *= lambda;
+            objective = obj1 - obj2;
+            model.setObjective(objective, GRB_MAXIMIZE);
+
+            //initial constraints
             for(int x = 0; x < segment_size.width-1; ++x) {
                 for(int y = 0; y < segment_size.height-1; ++y) {
                     //a---b
@@ -307,17 +274,39 @@ int main(int argc, char** argv) {
     }
     int modelnum = 0;
     while(modelnum < number_of_segments) {
-        if(models[modelnum].get(GRB_IntAttr_Status) != GRB_INPROGRESS) {
-            std::cout << "segment " << modelnum << " done" << std::endl;
-            modelnum++;
-        }
+        if(models[modelnum].get(GRB_IntAttr_Status) != GRB_INPROGRESS) modelnum++;
         sleep(0.5);
     }
-    std::cout << "done. writing matrix" << std::endl;
-    //WRITE
+
+    // done
+
+    // write csv
+    cv::Mat csv_mat;
+    csv_mat.create(picture_size, CV_32SC1);
+    csv_mat = cv::Scalar(0); 
+    int label_offset = 0;
+
+    for(int i = 0; i < number_of_segments; ++i){
+        GRBModel& model = models[i];
+        Graph& g = *segment_graphs[i];
+        cv::Size& segment_size = g[b::graph_bundle].size;
+        cv::Mat submatrix = csv_mat(g[b::graph_bundle].row, g[b::graph_bundle].col);
+        int max_label = 0;
+        for(int x = 0; x < segment_size.width; ++x) {
+          for(int y = 0; y < segment_size.height; ++y) {
+             int label = g[(Graph::vertex_descriptor)xy_to_index(x,y,segment_size)].multicut_label;
+             max_label = std::max(max_label, label); 
+             submatrix.at<int>(y, x) = label + label_offset;
+          }
+        }
+        label_offset = label_offset + max_label;
+    }
+
+    saveMatToCsv(csv_mat, vm["csv"].as<std::string>());
+
+
+    // write image
     cv::Mat red;
-    red.create(picture_size, CV_8UC3);
-    red = cv::Scalar(0, 0, 255);
     cv::Mat border_mask;
     border_mask.create(picture_size, CV_8UC1);
     border_mask = cv::Scalar(0); 
@@ -356,43 +345,16 @@ int main(int argc, char** argv) {
         }
         #endif
     }
-    std::cout << "showing image" << std::endl;
+    red.create(picture_size, CV_8UC3);
+    red = cv::Scalar(0, 0, 255);
     cv::cvtColor(src_gray, dst, CV_GRAY2BGR);
     red.copyTo( dst, border_mask ); 
-    cv::imshow( window_name, dst );
+    cv::imwrite( vm["output-file"].as<std::string>(), dst);
 
-    #if 0
-    Graph picture_graph(picture_size.width*picture_size.height);
-    int edge_index_counter = 0;
-    for(int x = 0; x < picture_size.width; ++x) {
-        for(int y = 0; y < picture_size.height; ++y) {
-            if(x != picture_size.width-1) {
-                int a = xy_to_index(x, y, picture_size);
-                int b = xy_to_index(x+1, y, picture_size);
-                Graph::edge_descriptor e;
-                bool inserted;
-                b::tie(e, inserted) = b::add_edge(a, b, picture_graph);
-                picture_graph[e].index = edge_index_counter++;
-            }
-            if(y != picture_size.height-1) {
-                int a = xy_to_index(x, y, picture_size);
-                int b = xy_to_index(x, y+1, picture_size);
-                Graph::edge_descriptor e;
-                bool inserted;
-                b::tie(e, inserted) = b::add_edge(a, b, picture_graph);
-                picture_graph[e].index = edge_index_counter++;
-            }
-        }
+    if(vm["interactive"].as<bool>()) {
+        cv::imshow( window_name, dst );
+        cv::waitKey(0);
     }
-    #endif
-    
-    cv::waitKey(0);
 
-    std::cout << "...DONE." << std::endl;
-        
-    
-
-
-    #endif
     return EXIT_SUCCESS;
 }

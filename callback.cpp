@@ -50,7 +50,7 @@ void myGRBCallback::callback() {
         Q.push(u);
         int tryit = 1;
         while(!Q.empty()) {
-          if(tryit++ == 100) break; 
+          if(tryit++ == 60) break; 
           Graph_noprop::vertex_descriptor u = Q.front();
           Q.pop();
           Graph_noprop::adjacency_iterator ai, ai_end;
@@ -58,10 +58,9 @@ void myGRBCallback::callback() {
             // up, left, right, down
             bool chord = false;
             Graph_noprop::vertex_descriptor a1 = u;
+            Graph_noprop::adjacency_iterator aai, aai_end;
             while(a1 != -1) {
               Graph_noprop::vertex_descriptor a2 = p[a1];
-              Graph::edge_descriptor e_path = b::edge(a1,a2,graph).first;
-              Graph_noprop::adjacency_iterator aai, aai_end;
               for(b::tie(aai, aai_end) = b::adjacent_vertices(*ai, non_cuts); aai != aai_end; ++aai){
                  if(*aai != u && *aai == a2) {
                     chord = true;
@@ -77,6 +76,7 @@ void myGRBCallback::callback() {
               color[*ai] = grey;
               p[*ai] = u;
               if(*ai == v) {
+                //std::cout << "found_it chordless" << std::endl;
                 goto found_it;
               }
               Q.push(*ai);
@@ -102,6 +102,7 @@ void myGRBCallback::callback() {
               color[*ai] = grey;
               p[*ai] = u;
               if(*ai == v) {
+                //std::cout << "found_it bsf" << std::endl;
                 goto found_it;
               }
               Q.push(*ai);

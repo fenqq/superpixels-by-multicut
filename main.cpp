@@ -83,11 +83,12 @@ int main(int argc, char** argv) {
         po::options_description desc("Allowed options");
         desc.add_options()
             ("help,h", "produce help message")
-            ("grid-size,gs", po::value<int>()->default_value(64), "set number of grid elements. Only approximate")
+            ("grid-size,gs", po::value<int>()->default_value(264), "set number of grid elements. Only approximate")
             ("input-file", po::value< std::string >(), "picture to process")
-            ("output-file", po::value< std::string >()->default_value("out.jpg"), "picture to process")
+            ("output-file,o", po::value< std::string >()->default_value("out.jpg"), "picture to process")
             ("interactive", po::value<bool>()->default_value(true), "interactive mode")
             ("csv", po::value< std::string >()->default_value("out.csv"), "csv file name to write to")
+            ("lambda", po::value< double >() ->default_value(0.09), "parameter for multicut criterion")
         ;
 
         po::positional_options_description p;
@@ -144,6 +145,7 @@ int main(int argc, char** argv) {
     cv::Size segment_dim(floor(ratio * root), floor((1/ratio) * root));
     int number_of_segments = segment_dim.width*segment_dim.height;
     
+
     //segments should like this:
     //D-A A A A A-C C C C
     //| | | | | | | | | |
@@ -166,7 +168,7 @@ int main(int argc, char** argv) {
     }
 
     
-    double lambda = 0.09;
+    double lambda =  vm["lambda"].as<double>();
     std::vector<Graph*> segment_graphs(number_of_segments);
     //GRBEnv env = GRBEnv();
     std::vector<GRBEnv> envs(number_of_segments); // we need an environment per model
@@ -301,7 +303,7 @@ int main(int argc, char** argv) {
         }
         label_offset = label_offset + max_label;
     }
-
+    std::cout << "num labels: " << label_offset << std::endl;
     saveMatToCsv(csv_mat, vm["csv"].as<std::string>());
 
 

@@ -651,7 +651,10 @@ int main(int argc, char** argv) {
         label_offset = label_offset + max_label + 1;//right?
     }
     std::cout << "num labels: " << label_offset << std::endl;
+    std::cout << "merging..." << std::endl;
+    for(int i = 0; i < 20; ++i) {
     enforceMinimumSuperpixelSize(src_gray, labels, (int)(vm["enforce-size"].as<double>()*segment_size_approx.width*segment_size_approx.height)); 
+    }
 //  enforceMinimumSuperpixelSizeUpTo(src_gray, labels, 3320);
     // ... maybe just fuse them to segment?
     int count = count_labels(labels);
